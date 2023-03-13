@@ -17,15 +17,12 @@
 
 #include "obs-nix-platform.h"
 
-#include <assert.h>
-
-static enum obs_nix_platform_type obs_nix_platform = OBS_NIX_PLATFORM_X11_EGL;
+static enum obs_nix_platform_type obs_nix_platform = OBS_NIX_PLATFORM_X11_GLX;
 
 static void *obs_nix_platform_display = NULL;
 
 void obs_set_nix_platform(enum obs_nix_platform_type platform)
 {
-	assert(platform != OBS_NIX_PLATFORM_X11_GLX);
 	obs_nix_platform = platform;
 }
 

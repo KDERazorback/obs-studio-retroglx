@@ -16,6 +16,7 @@
 ******************************************************************************/
 
 #include "gl-nix.h"
+#include "gl-x11-glx.h"
 #include "gl-x11-egl.h"
 
 #ifdef ENABLE_WAYLAND
@@ -29,6 +30,9 @@ static void init_winsys(void)
 	assert(gl_vtable == NULL);
 
 	switch (obs_get_nix_platform()) {
+	case OBS_NIX_PLATFORM_X11_GLX:
+		gl_vtable = gl_x11_glx_get_winsys_vtable();
+		break;
 	case OBS_NIX_PLATFORM_X11_EGL:
 		gl_vtable = gl_x11_egl_get_winsys_vtable();
 		break;
