@@ -230,11 +230,10 @@ render_output_texture(struct obs_core_video_mix *mix)
 	gs_effect_t *effect = get_scale_effect(mix, width, height);
 	gs_technique_t *tech;
 
-	if (video_output_get_format(mix->video) == VIDEO_FORMAT_RGBA) {
+	if (video_output_get_format(mix->video) == VIDEO_FORMAT_BGRA) {
 		tech = gs_effect_get_technique(effect, "DrawAlphaDivide");
 	} else {
-		if ((effect == video->default_effect) &&
-		    (width == video->base_width) &&
+		if ((width == video->base_width) &&
 		    (height == video->base_height))
 			return texture;
 
@@ -1045,7 +1044,9 @@ static const char *output_frame_name = "output_frame";
 static inline void update_active_state(struct obs_core_video_mix *video)
 {
 	const bool raw_was_active = video->raw_was_active;
+#ifdef _WIN32
 	const bool gpu_was_active = video->gpu_was_active;
+#endif
 	const bool was_active = video->was_active;
 
 	bool raw_active = os_atomic_load_long(&video->raw_active) > 0;

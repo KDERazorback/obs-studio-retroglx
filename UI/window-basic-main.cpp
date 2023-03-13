@@ -154,13 +154,22 @@ template<typename T> static void SetOBSRef(QListWidgetItem *item, T &&val)
 
 static void AddExtraModulePaths()
 {
-	char *plugins_path = getenv("OBS_PLUGINS_PATH");
-	char *plugins_data_path = getenv("OBS_PLUGINS_DATA_PATH");
-	if (plugins_path && plugins_data_path) {
+	string plugins_path, plugins_data_path;
+	char *s;
+
+	s = getenv("OBS_PLUGINS_PATH");
+	if (s)
+		plugins_path = s;
+
+	s = getenv("OBS_PLUGINS_DATA_PATH");
+	if (s)
+		plugins_data_path = s;
+
+	if (!plugins_path.empty() && !plugins_data_path.empty()) {
 		string data_path_with_module_suffix;
 		data_path_with_module_suffix += plugins_data_path;
 		data_path_with_module_suffix += "/%module%";
-		obs_add_module_path(plugins_path,
+		obs_add_module_path(plugins_path.c_str(),
 				    data_path_with_module_suffix.c_str());
 	}
 
@@ -1389,8 +1398,8 @@ bool OBSBasic::InitBasicConfigDefaults()
 				false);
 	config_set_default_string(basicConfig, "SimpleOutput", "Preset",
 				  "veryfast");
-	config_set_default_string(basicConfig, "SimpleOutput", "NVENCPreset",
-				  "hq");
+	config_set_default_string(basicConfig, "SimpleOutput", "NVENCPreset2",
+				  "p6");
 	config_set_default_string(basicConfig, "SimpleOutput", "RecQuality",
 				  "Stream");
 	config_set_default_bool(basicConfig, "SimpleOutput", "RecRB", false);
@@ -1527,6 +1536,7 @@ bool OBSBasic::InitBasicConfigDefaults()
 }
 
 extern bool EncoderAvailable(const char *encoder);
+extern bool update_nvenc_presets(ConfigFile &config);
 
 void OBSBasic::InitBasicConfigDefaults2()
 {
@@ -1540,6 +1550,9 @@ void OBSBasic::InitBasicConfigDefaults2()
 	config_set_default_string(basicConfig, "SimpleOutput", "RecEncoder",
 				  useNV ? SIMPLE_ENCODER_NVENC
 					: SIMPLE_ENCODER_X264);
+
+	if (update_nvenc_presets(basicConfig))
+		config_save_safe(basicConfig, "tmp", nullptr);
 }
 
 bool OBSBasic::InitBasicConfig()
@@ -2036,14 +2049,10 @@ void OBSBasic::OBSInit()
 
 	ui->viewMenu->addSeparator();
 
-	multiviewProjectorMenu = new QMenu(QTStr("MultiviewProjector"));
-	ui->viewMenu->addMenu(multiviewProjectorMenu);
-	AddProjectorMenuMonitors(multiviewProjectorMenu, this,
+	AddProjectorMenuMonitors(ui->multiviewProjectorMenu, this,
 				 SLOT(OpenMultiviewProjector()));
 	connect(ui->viewMenu->menuAction(), &QAction::hovered, this,
 		&OBSBasic::UpdateMultiviewProjectorMenu);
-	ui->viewMenu->addAction(QTStr("MultiviewWindowed"), this,
-				SLOT(OpenMultiviewWindow()));
 
 	ui->sources->UpdateIcons();
 
@@ -2279,8 +2288,8 @@ void OBSBasic::ShowWhatsNew(const QString &url)
 
 void OBSBasic::UpdateMultiviewProjectorMenu()
 {
-	multiviewProjectorMenu->clear();
-	AddProjectorMenuMonitors(multiviewProjectorMenu, this,
+	ui->multiviewProjectorMenu->clear();
+	AddProjectorMenuMonitors(ui->multiviewProjectorMenu, this,
 				 SLOT(OpenMultiviewProjector()));
 }
 
@@ -2604,7 +2613,6 @@ OBSBasic::~OBSBasic()
 		updateCheckThread->wait();
 
 	delete screenshotData;
-	delete multiviewProjectorMenu;
 	delete previewProjector;
 	delete studioProgramProjector;
 	delete previewProjectorSource;
@@ -2693,12 +2701,10 @@ OBSBasic::~OBSBasic()
 		       OBS_BETA_VER);
 #endif
 
-	bool alwaysOnTop = IsAlwaysOnTop(this);
-
 	config_set_bool(App()->GlobalConfig(), "BasicWindow", "PreviewEnabled",
 			previewEnabled);
 	config_set_bool(App()->GlobalConfig(), "BasicWindow", "AlwaysOnTop",
-			alwaysOnTop);
+			ui->actionAlwaysOnTop->isChecked());
 	config_set_bool(App()->GlobalConfig(), "BasicWindow",
 			"SceneDuplicationMode", sceneDuplicationMode);
 	config_set_bool(App()->GlobalConfig(), "BasicWindow", "SwapScenesMode",
@@ -4346,7 +4352,7 @@ static inline enum video_format GetVideoFormatFromName(const char *name)
 		return VIDEO_FORMAT_UYVY;
 #endif
 	else
-		return VIDEO_FORMAT_RGBA;
+		return VIDEO_FORMAT_BGRA;
 }
 
 static inline enum video_colorspace GetVideoColorSpaceFromName(const char *name)
@@ -4368,9 +4374,6 @@ void OBSBasic::ResetUI()
 {
 	bool studioPortraitLayout = config_get_bool(
 		GetGlobalConfig(), "BasicWindow", "StudioPortraitLayout");
-
-	bool labels = config_get_bool(GetGlobalConfig(), "BasicWindow",
-				      "StudioModeLabels");
 
 	if (studioPortraitLayout)
 		ui->previewLayout->setDirection(QBoxLayout::BottomToTop);
@@ -4768,7 +4771,9 @@ void OBSBasic::closeEvent(QCloseEvent *event)
 			  saveState().toBase64().constData());
 
 #ifdef BROWSER_AVAILABLE
-	SaveExtraBrowserDocks();
+	if (cef)
+		SaveExtraBrowserDocks();
+
 	ClearExtraBrowserDocks();
 #endif
 
@@ -5641,6 +5646,18 @@ void OBSBasic::CreateSourcePopupMenu(int idx, bool preview)
 			actionHideMixer->setChecked(SourceMixerHidden(source));
 			popup.addSeparator();
 		}
+
+		QAction *resizeOutput =
+			popup.addAction(QTStr("ResizeOutputSizeOfSource"), this,
+					SLOT(ResizeOutputSizeOfSource()));
+
+		int width = obs_source_get_width(source);
+		int height = obs_source_get_height(source);
+
+		resizeOutput->setEnabled(!obs_video_active());
+
+		if (width < 8 || height < 8)
+			resizeOutput->setEnabled(false);
 
 		scaleFilteringMenu = new QMenu(QTStr("ScaleFiltering"));
 		popup.addMenu(
@@ -7108,17 +7125,31 @@ void OBSBasic::StreamingStop(int code, QString last_error)
 
 void OBSBasic::AutoRemux(QString input, bool no_show)
 {
-	bool autoRemux = config_get_bool(Config(), "Video", "AutoRemux");
+	auto config = Config();
+
+	bool autoRemux = config_get_bool(config, "Video", "AutoRemux");
 
 	if (!autoRemux)
 		return;
 
-	const char *recType = config_get_string(Config(), "AdvOut", "RecType");
+	bool isSimpleMode = false;
 
-	bool ffmpegOutput = astrcmpi(recType, "FFmpeg") == 0;
+	const char *mode = config_get_string(config, "Output", "Mode");
+	if (!mode) {
+		isSimpleMode = true;
+	} else {
+		isSimpleMode = strcmp(mode, "Simple") == 0;
+	}
 
-	if (ffmpegOutput)
-		return;
+	if (!isSimpleMode) {
+		const char *recType =
+			config_get_string(config, "AdvOut", "RecType");
+
+		bool ffmpegOutput = astrcmpi(recType, "FFmpeg") == 0;
+
+		if (ffmpegOutput)
+			return;
+	}
 
 	if (input.isEmpty())
 		return;
@@ -8772,11 +8803,6 @@ void OBSBasic::OpenSourceWindow()
 		      ProjectorType::Source);
 }
 
-void OBSBasic::OpenMultiviewWindow()
-{
-	OpenProjector(nullptr, -1, ProjectorType::Multiview);
-}
-
 void OBSBasic::OpenSceneWindow()
 {
 	OBSScene scene = GetCurrentScene();
@@ -8991,6 +9017,11 @@ void OBSBasic::on_resetUI_triggered()
 	ui->toggleContextBar->setChecked(true);
 	ui->toggleSourceIcons->setChecked(true);
 	ui->toggleStatusBar->setChecked(true);
+}
+
+void OBSBasic::on_multiviewProjectorWindowed_triggered()
+{
+	OpenProjector(nullptr, -1, ProjectorType::Multiview);
 }
 
 void OBSBasic::on_toggleListboxToolbars_toggled(bool visible)
@@ -9723,6 +9754,40 @@ void OBSBasic::on_actionShowAbout_triggered()
 	about->show();
 
 	about->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void OBSBasic::ResizeOutputSizeOfSource()
+{
+	if (obs_video_active())
+		return;
+
+	QMessageBox resize_output(this);
+	resize_output.setText(QTStr("ResizeOutputSizeOfSource.Text") + "\n\n" +
+			      QTStr("ResizeOutputSizeOfSource.Continue"));
+	QAbstractButton *Yes =
+		resize_output.addButton(QTStr("Yes"), QMessageBox::YesRole);
+	resize_output.addButton(QTStr("No"), QMessageBox::NoRole);
+	resize_output.setIcon(QMessageBox::Warning);
+	resize_output.setWindowTitle(QTStr("ResizeOutputSizeOfSource"));
+	resize_output.exec();
+
+	if (resize_output.clickedButton() != Yes)
+		return;
+
+	OBSSource source = obs_sceneitem_get_source(GetCurrentSceneItem());
+
+	int width = obs_source_get_width(source);
+	int height = obs_source_get_height(source);
+
+	config_set_uint(basicConfig, "Video", "BaseCX", width);
+	config_set_uint(basicConfig, "Video", "BaseCY", height);
+	config_set_uint(basicConfig, "Video", "OutputCX", width);
+	config_set_uint(basicConfig, "Video", "OutputCY", height);
+
+	ResetVideo();
+	ResetOutputs();
+	config_save_safe(basicConfig, "tmp", nullptr);
+	on_actionFitToScreen_triggered();
 }
 
 QAction *OBSBasic::AddDockWidget(QDockWidget *dock)

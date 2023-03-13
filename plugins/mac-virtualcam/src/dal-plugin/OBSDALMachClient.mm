@@ -10,6 +10,7 @@
 #import "Logging.h"
 
 @interface OBSDALMachClient () <NSPortDelegate> {
+	uint32_t _seed;
 	NSPort *_receivePort;
 }
 @end
@@ -113,6 +114,7 @@
 
 			IOSurfaceRef surface = IOSurfaceLookupFromMachPort(
 				[framePort machPort]);
+			[framePort invalidate];
 			mach_port_deallocate(mach_task_self(),
 					     [framePort machPort]);
 
@@ -121,9 +123,11 @@
 				return;
 			}
 
+			IOSurfaceLock(surface, 0, &_seed);
 			CVPixelBufferRef frame;
 			CVPixelBufferCreateWithIOSurface(kCFAllocatorDefault,
 							 surface, NULL, &frame);
+			IOSurfaceUnlock(surface, 0, &_seed);
 			CFRelease(surface);
 
 			uint64_t timestamp;

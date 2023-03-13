@@ -46,6 +46,8 @@ int totalFileSize = 0;
 int completedFileSize = 0;
 static int completedUpdates = 0;
 
+static wchar_t tempPath[MAX_PATH];
+
 struct LastError {
 	DWORD code;
 	inline LastError() { code = GetLastError(); }
@@ -796,9 +798,12 @@ static void AddPackageRemovedFiles(const Json &package)
 		/* Technically GetFileAttributes can fail for other reasons,
 		 * so double-check by also checking the last error */
 		if (GetFileAttributesW(removedFileName) ==
-			    INVALID_FILE_ATTRIBUTES &&
-		    GetLastError() == ERROR_FILE_NOT_FOUND)
-			continue;
+		    INVALID_FILE_ATTRIBUTES) {
+			int err = GetLastError();
+			if (err == ERROR_FILE_NOT_FOUND ||
+			    err == ERROR_PATH_NOT_FOUND)
+				continue;
+		}
 
 		deletion_t deletion;
 		deletion.originalFilename = removedFileName;
@@ -879,6 +884,17 @@ static void UpdateWithPatchIfAvailable(const char *name, const char *hash,
 		update.sourceURL = sourceURL;
 		update.fileSize = size;
 		update.patchable = true;
+
+		/* ensure the filename is unique */
+		static long increment = 0;
+
+		/* Since the patch depends on the previous version, we can
+		 * no longer rely on the temp name being unique to the
+		 * new file's hash */
+		update.tempPath = tempPath;
+		update.tempPath += L"\\";
+		update.tempPath += patchHashStr;
+		update.tempPath += std::to_wstring(increment++);
 		break;
 	}
 }
@@ -1064,8 +1080,6 @@ static bool UpdateFile(update_t &file)
 
 	return true;
 }
-
-static wchar_t tempPath[MAX_PATH] = {};
 
 #define PATCH_MANIFEST_URL \
 	L"https://obsproject.com/update_studio/getpatchmanifest"
@@ -1570,9 +1584,13 @@ static bool Update(wchar_t *cmdLine)
 		}
 	}
 
-	for (deletion_t &deletion : deletions)
-		if (!RenameRemovedFile(deletion))
+	for (deletion_t &deletion : deletions) {
+		if (!RenameRemovedFile(deletion)) {
+			Status(L"Update failed: Couldn't remove "
+			       L"obsolete files");
 			return false;
+		}
+	}
 
 	/* ------------------------------------- *
 	 * Install virtual camera                */
@@ -1855,15 +1873,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int)
 
 	is32bit = wcsstr(cwd, L"bin\\32bit") != nullptr;
 
+	if (!IsWindows10OrGreater()) {
+		MessageBox(
+			nullptr,
+			L"OBS Studio 28 and newer no longer support Windows 7,"
+			L" Windows 8, or Windows 8.1. You can disable the"
+			L" following setting to opt out of future updates:"
+			L" Settings → General → General → Automatically check"
+			L" for updates on startup",
+			L"Unsupported Operating System", MB_ICONWARNING);
+		return 0;
+	}
+
 	if (!HasElevation()) {
 
 		WinHandle hMutex = OpenMutex(
 			SYNCHRONIZE, false, L"OBSUpdaterRunningAsNonAdminUser");
 		if (hMutex) {
 			MessageBox(
-				nullptr, L"Updater Error",
+				nullptr,
 				L"OBS Studio Updater must be run as an administrator.",
-				MB_ICONWARNING);
+				L"Updater Error", MB_ICONWARNING);
 			return 2;
 		}
 

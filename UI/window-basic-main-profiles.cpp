@@ -338,6 +338,7 @@ bool OBSBasic::CreateProfile(const std::string &newName, bool create_new,
 
 	config_save_safe(App()->GlobalConfig(), "tmp", nullptr);
 	UpdateTitleBar();
+	UpdateVolumeControlsDecayRate();
 
 	Auth::Load();
 
@@ -614,6 +615,7 @@ void OBSBasic::on_actionRemoveProfile_triggered(bool skipConfirmation)
 	blog(LOG_INFO, "------------------------------------------------");
 
 	UpdateTitleBar();
+	UpdateVolumeControlsDecayRate();
 
 	Auth::Load();
 
@@ -785,6 +787,7 @@ void OBSBasic::ChangeProfile()
 	RefreshProfiles();
 	config_save_safe(App()->GlobalConfig(), "tmp", nullptr);
 	UpdateTitleBar();
+	UpdateVolumeControlsDecayRate();
 
 	Auth::Load();
 
@@ -854,6 +857,12 @@ void OBSBasic::CheckForSimpleModeX264Fallback()
 				return false;
 			}
 		} else if (strcmp(name, SIMPLE_ENCODER_NVENC) == 0) {
+			if (!nve_supported) {
+				changed = true;
+				name = SIMPLE_ENCODER_X264;
+				return false;
+			}
+		} else if (strcmp(name, SIMPLE_ENCODER_NVENC_AV1) == 0) {
 			if (!nve_supported) {
 				changed = true;
 				name = SIMPLE_ENCODER_X264;

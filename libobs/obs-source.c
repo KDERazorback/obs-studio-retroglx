@@ -2078,17 +2078,37 @@ static const char *select_conversion_technique(enum video_format format,
 		return "UYVY_Reverse";
 
 	case VIDEO_FORMAT_YUY2:
-		return "YUY2_Reverse";
+		switch (trc) {
+		case VIDEO_TRC_PQ:
+			return "YUY2_PQ_Reverse";
+		case VIDEO_TRC_HLG:
+			return "YUY2_HLG_Reverse";
+		default:
+			return "YUY2_Reverse";
+		}
 
 	case VIDEO_FORMAT_YVYU:
 		return "YVYU_Reverse";
 
 	case VIDEO_FORMAT_I420:
-		return (trc == VIDEO_TRC_PQ) ? "I420_PQ_Reverse"
-					     : "I420_Reverse";
+		switch (trc) {
+		case VIDEO_TRC_PQ:
+			return "I420_PQ_Reverse";
+		case VIDEO_TRC_HLG:
+			return "I420_HLG_Reverse";
+		default:
+			return "I420_Reverse";
+		}
 
 	case VIDEO_FORMAT_NV12:
-		return "NV12_Reverse";
+		switch (trc) {
+		case VIDEO_TRC_PQ:
+			return "NV12_PQ_Reverse";
+		case VIDEO_TRC_HLG:
+			return "NV12_HLG_Reverse";
+		default:
+			return "NV12_Reverse";
+		}
 
 	case VIDEO_FORMAT_I444:
 		return "I444_Reverse";
@@ -2229,6 +2249,7 @@ static bool update_async_texrender(struct obs_source *source,
 		set_eparam(conv, "width_d2", (float)cx * 0.5f);
 		set_eparam(conv, "height_d2", (float)cy * 0.5f);
 		set_eparam(conv, "width_x2_i", 0.5f / (float)cx);
+		set_eparam(conv, "height_x2_i", 0.5f / (float)cy);
 
 		/* BT.2408 says higher than 1000 isn't comfortable */
 		float hlg_peak_level = obs->video.hdr_nominal_peak_level;
@@ -2436,7 +2457,7 @@ static inline void obs_source_render_async_video(obs_source_t *source)
 		const char *tech_name = "Draw";
 		float multiplier = 1.0;
 		const enum gs_color_space current_space = gs_get_color_space();
-		const bool linear_srgb = gs_get_linear_srgb();
+		bool linear_srgb = gs_get_linear_srgb();
 		bool nonlinear_alpha = false;
 		switch (source_space) {
 		case GS_CS_SRGB:
@@ -2471,6 +2492,7 @@ static inline void obs_source_render_async_video(obs_source_t *source)
 			case GS_CS_SRGB:
 			case GS_CS_SRGB_16F:
 				tech_name = "DrawTonemap";
+				linear_srgb = true;
 				break;
 			case GS_CS_709_SCRGB:
 				tech_name = "DrawMultiply";
@@ -2485,6 +2507,7 @@ static inline void obs_source_render_async_video(obs_source_t *source)
 				tech_name = "DrawMultiplyTonemap";
 				multiplier =
 					80.0f / obs_get_video_sdr_white_level();
+				linear_srgb = true;
 				break;
 			case GS_CS_709_EXTENDED:
 				tech_name = "DrawMultiply";
