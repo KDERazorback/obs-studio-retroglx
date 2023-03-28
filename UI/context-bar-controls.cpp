@@ -311,10 +311,12 @@ void DisplayCaptureToolbar::Init()
 	const char *device_str =
 		get_os_text(mod, "Monitor", "DisplayCapture.Display", "Screen");
 	ui->deviceLabel->setText(device_str);
+#ifndef _WIN32
 	is_int = true;
+#endif
 
 #ifdef _WIN32
-	prop_name = "monitor";
+	prop_name = "monitor_id";
 #elif __APPLE__
 	prop_name = "display";
 #else
@@ -571,7 +573,8 @@ void ColorSourceToolbar::on_choose_clicked()
 	QColorDialog::ColorDialogOptions options;
 
 	options |= QColorDialog::ShowAlphaChannel;
-#ifndef _WIN32
+#ifdef __linux__
+	// TODO: Revisit hang on Ubuntu with native dialog
 	options |= QColorDialog::DontUseNativeDialog;
 #endif
 
@@ -693,7 +696,8 @@ void TextSourceToolbar::on_selectColor_clicked()
 	QColorDialog::ColorDialogOptions options;
 
 	options |= QColorDialog::ShowAlphaChannel;
-#ifndef _WIN32
+#ifdef __linux__
+	// TODO: Revisit hang on Ubuntu with native dialog
 	options |= QColorDialog::DontUseNativeDialog;
 #endif
 

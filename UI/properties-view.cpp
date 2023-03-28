@@ -138,6 +138,7 @@ void OBSPropertiesView::RefreshProperties()
 	setWidget(widget);
 	SetScrollPos(h, v);
 	setSizePolicy(mainPolicy);
+	adjustSize();
 
 	lastFocused.clear();
 	if (lastWidget) {
@@ -1293,8 +1294,7 @@ static void UpdateFPSLabels(OBSFrameRatePropertyWidget *w)
 		w->currentFPS->setHidden(true);
 		w->timePerFrame->setHidden(true);
 		if (!option)
-			w->warningLabel->setStyleSheet(
-				"QLabel { color: red; }");
+			w->warningLabel->setObjectName("errorLabel");
 
 		return;
 	}
@@ -1304,9 +1304,9 @@ static void UpdateFPSLabels(OBSFrameRatePropertyWidget *w)
 
 	media_frames_per_second match{};
 	if (!option && !matches_ranges(match, *valid_fps, w->fps_ranges, true))
-		w->warningLabel->setStyleSheet("QLabel { color: red; }");
+		w->warningLabel->setObjectName("errorLabel");
 	else
-		w->warningLabel->setStyleSheet("");
+		w->warningLabel->setObjectName("");
 
 	auto convert_to_fps = media_frames_per_second_to_fps;
 	auto convert_to_frame_interval =
@@ -1519,8 +1519,8 @@ void OBSPropertiesView::AddProperty(obs_property_t *property,
 		label = new QLabel(QT_UTF8(obs_property_description(property)));
 
 	if (label) {
-		if (warning) //TODO: select color based on background color
-			label->setStyleSheet("QLabel { color: red; }");
+		if (warning)
+			label->setObjectName("errorLabel");
 
 		if (minSize) {
 			label->setMinimumWidth(minSize);
@@ -1750,6 +1750,11 @@ bool WidgetInfo::PathChanged(const char *setting)
 		path = SaveFile(view, QT_UTF8(desc), QT_UTF8(default_path),
 				QT_UTF8(filter));
 
+#ifdef __APPLE__
+	// TODO: Revisit when QTBUG-42661 is fixed
+	widget->window()->raise();
+#endif
+
 	if (path.isEmpty())
 		return false;
 
@@ -1807,15 +1812,18 @@ bool WidgetInfo::ColorChangedInternal(const char *setting, bool supportAlpha)
 		options |= QColorDialog::ShowAlphaChannel;
 	}
 
-	/* The native dialog on OSX has all kinds of problems, like closing
-	 * other open QDialogs on exit, and
-	 * https://bugreports.qt-project.org/browse/QTBUG-34532
-	 */
-#ifndef _WIN32
+#ifdef __linux__
+	// TODO: Revisit hang on Ubuntu with native dialog
 	options |= QColorDialog::DontUseNativeDialog;
 #endif
 
 	color = QColorDialog::getColor(color, view, QT_UTF8(desc), options);
+
+#ifdef __APPLE__
+	// TODO: Revisit when QTBUG-42661 is fixed
+	widget->window()->raise();
+#endif
+
 	if (!color.isValid())
 		return false;
 
@@ -1965,13 +1973,12 @@ void WidgetInfo::ButtonClicked()
 		}
 		return;
 	}
-	if (view->rawObj || view->weakObj) {
-		OBSObject strongObj = view->GetObject();
-		void *obj = strongObj ? strongObj.Get() : view->rawObj;
-		if (obs_property_button_clicked(property, obj)) {
-			QMetaObject::invokeMethod(view, "RefreshProperties",
-						  Qt::QueuedConnection);
-		}
+
+	OBSObject strongObj = view->GetObject();
+	void *obj = strongObj ? strongObj.Get() : view->rawObj;
+	if (obs_property_button_clicked(property, obj)) {
+		QMetaObject::invokeMethod(view, "RefreshProperties",
+					  Qt::QueuedConnection);
 	}
 }
 
@@ -2217,6 +2224,10 @@ void WidgetInfo::EditListAddFiles()
 
 	QStringList files = OpenFiles(App()->GetMainWindow(), title,
 				      QT_UTF8(default_path), QT_UTF8(filter));
+#ifdef __APPLE__
+	// TODO: Revisit when QTBUG-42661 is fixed
+	widget->window()->raise();
+#endif
 
 	if (files.count() == 0)
 		return;
@@ -2237,6 +2248,10 @@ void WidgetInfo::EditListAddDir()
 
 	QString dir = SelectDirectory(App()->GetMainWindow(), title,
 				      QT_UTF8(default_path));
+#ifdef __APPLE__
+	// TODO: Revisit when QTBUG-42661 is fixed
+	widget->window()->raise();
+#endif
 
 	if (dir.isEmpty())
 		return;

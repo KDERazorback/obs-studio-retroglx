@@ -9,6 +9,7 @@
 #include "window-basic-main.hpp"
 #include "obs-app.hpp"
 #include "platform.hpp"
+#include "display-helpers.hpp"
 
 #define HANDLE_RADIUS 4.0f
 #define HANDLE_SEL_RADIUS (HANDLE_RADIUS * 1.5f)
@@ -1868,10 +1869,9 @@ bool OBSBasicPreview::DrawSelectedOverflow(obs_scene_t *scene,
 	if (!SceneItemHasVideo(item))
 		return true;
 
-	bool select = config_get_bool(GetGlobalConfig(), "BasicWindow",
-				      "OverflowSelectionHidden");
+	OBSBasicPreview *prev = reinterpret_cast<OBSBasicPreview *>(param);
 
-	if (!select && !obs_sceneitem_visible(item))
+	if (!prev->GetOverflowSelectionHidden() && !obs_sceneitem_visible(item))
 		return true;
 
 	if (obs_sceneitem_is_group(item)) {
@@ -1885,13 +1885,8 @@ bool OBSBasicPreview::DrawSelectedOverflow(obs_scene_t *scene,
 		gs_matrix_pop();
 	}
 
-	bool always = config_get_bool(GetGlobalConfig(), "BasicWindow",
-				      "OverflowAlwaysVisible");
-
-	if (!always && !obs_sceneitem_selected(item))
+	if (!prev->GetOverflowAlwaysVisible() && !obs_sceneitem_selected(item))
 		return true;
-
-	OBSBasicPreview *prev = reinterpret_cast<OBSBasicPreview *>(param);
 
 	matrix4 boxTransform;
 	matrix4 invBoxTransform;
@@ -2177,10 +2172,7 @@ void OBSBasicPreview::DrawOverflow()
 	if (locked)
 		return;
 
-	bool hidden = config_get_bool(GetGlobalConfig(), "BasicWindow",
-				      "OverflowHidden");
-
-	if (hidden)
+	if (overflowHidden)
 		return;
 
 	GS_DEBUG_MARKER_BEGIN(GS_DEBUG_COLOR_DEFAULT, "DrawOverflow");
@@ -2264,6 +2256,8 @@ void OBSBasicPreview::ResetScrollingOffset()
 
 void OBSBasicPreview::SetScalingLevel(int32_t newScalingLevelVal)
 {
+	newScalingLevelVal = std::clamp(newScalingLevelVal, -MAX_SCALING_LEVEL,
+					MAX_SCALING_LEVEL);
 	float newScalingAmountVal =
 		pow(ZOOM_SENSITIVITY, float(newScalingLevelVal));
 	scalingLevel = newScalingLevelVal;
@@ -2308,10 +2302,7 @@ static obs_source_t *CreateLabel(float pixelRatio)
 	const char *text_source_id = "text_ft2_source";
 #endif
 
-	OBSSource txtSource =
-		obs_source_create_private(text_source_id, NULL, settings);
-
-	return txtSource;
+	return obs_source_create_private(text_source_id, NULL, settings);
 }
 
 static void SetLabelText(int sourceIndex, int px)
@@ -2515,6 +2506,23 @@ void OBSBasicPreview::DrawSpacingHelpers()
 				    groupOti.pos.x, groupOti.pos.y, 0.0f);
 	}
 
+	// Switch top/bottom or right/left if scale is negative
+	if (oti.scale.x < 0.0f) {
+		vec3 l = left;
+		vec3 r = right;
+
+		vec3_copy(&left, &r);
+		vec3_copy(&right, &l);
+	}
+
+	if (oti.scale.y < 0.0f) {
+		vec3 t = top;
+		vec3 b = bottom;
+
+		vec3_copy(&top, &b);
+		vec3_copy(&bottom, &t);
+	}
+
 	if (rot >= HELPER_ROT_BREAKPONT) {
 		for (float i = HELPER_ROT_BREAKPONT; i <= 360.0f; i += 90.0f) {
 			if (rot < i)
@@ -2546,23 +2554,6 @@ void OBSBasicPreview::DrawSpacingHelpers()
 			vec3_copy(&bottom, &l);
 			vec3_copy(&left, &t);
 		}
-	}
-
-	// Switch top/bottom or right/left if scale is negative
-	if (oti.scale.x < 0.0f) {
-		vec3 l = left;
-		vec3 r = right;
-
-		vec3_copy(&left, &r);
-		vec3_copy(&right, &l);
-	}
-
-	if (oti.scale.y < 0.0f) {
-		vec3 t = top;
-		vec3 b = bottom;
-
-		vec3_copy(&top, &b);
-		vec3_copy(&bottom, &t);
 	}
 
 	// Get sides of box transform
@@ -2612,4 +2603,27 @@ void OBSBasicPreview::DrawSpacingHelpers()
 	vec3_set(&start, 1.0f - right.x, right.y, 1.0f);
 	vec3_set(&end, 1.0f, right.y, 1.0f);
 	RenderSpacingHelper(3, start, end, viewport, pixelRatio);
+}
+
+void OBSBasicPreview::ClampScrollingOffsets()
+{
+	obs_video_info ovi;
+	obs_get_video_info(&ovi);
+
+	QSize targetSize = GetPixelSize(this);
+
+	vec3 target, offset;
+	vec3_set(&target, (float)targetSize.width(), (float)targetSize.height(),
+		 1.0f);
+
+	vec3_set(&offset, (float)ovi.base_width, (float)ovi.base_height, 1.0f);
+	vec3_mulf(&offset, &offset, scalingAmount);
+
+	vec3_sub(&offset, &offset, &target);
+
+	vec3_mulf(&offset, &offset, 0.5f);
+	vec3_maxf(&offset, &offset, 0.0f);
+
+	scrollingOffset.x = std::clamp(scrollingOffset.x, -offset.x, offset.x);
+	scrollingOffset.y = std::clamp(scrollingOffset.y, -offset.y, offset.y);
 }

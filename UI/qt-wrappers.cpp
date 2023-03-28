@@ -30,6 +30,7 @@
 #include <QStandardItemModel>
 #include <QLabel>
 #include <QPushButton>
+#include <QToolBar>
 
 #if !defined(_WIN32) && !defined(__APPLE__)
 #include <obs-nix-platform.h>
@@ -42,7 +43,7 @@
 static inline void OBSErrorBoxva(QWidget *parent, const char *msg, va_list args)
 {
 	char full_message[4096];
-	vsnprintf(full_message, 4095, msg, args);
+	vsnprintf(full_message, sizeof(full_message), msg, args);
 
 	QMessageBox::critical(parent, "Error", full_message);
 }
@@ -135,14 +136,18 @@ bool QTToGSWindow(QWindow *window, gs_window &gswindow)
 		gswindow.display = obs_get_nix_platform_display();
 		break;
 #ifdef ENABLE_WAYLAND
-	case OBS_NIX_PLATFORM_WAYLAND:
+	case OBS_NIX_PLATFORM_WAYLAND: {
 		QPlatformNativeInterface *native =
 			QGuiApplication::platformNativeInterface();
 		gswindow.display =
 			native->nativeResourceForWindow("surface", window);
 		success = gswindow.display != nullptr;
 		break;
+	}
 #endif
+	default:
+		success = false;
+		break;
 	}
 #endif
 	return success;
@@ -406,4 +411,17 @@ void TruncateLabel(QLabel *label, QString newText, int length)
 	newText += "...";
 
 	SetLabelText(label, newText);
+}
+
+void RefreshToolBarStyling(QToolBar *toolBar)
+{
+	for (QAction *action : toolBar->actions()) {
+		QWidget *widget = toolBar->widgetForAction(action);
+
+		if (!widget)
+			continue;
+
+		widget->style()->unpolish(widget);
+		widget->style()->polish(widget);
+	}
 }

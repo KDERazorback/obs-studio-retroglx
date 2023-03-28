@@ -32,17 +32,19 @@ static void init_winsys(void)
 	switch (obs_get_nix_platform()) {
 	case OBS_NIX_PLATFORM_X11_GLX:
 		gl_vtable = gl_x11_glx_get_winsys_vtable();
+		blog(LOG_INFO, "Using GLX/X11");
 		break;
 	case OBS_NIX_PLATFORM_X11_EGL:
-		gl_vtable = gl_x11_egl_get_winsys_vtable();
-		break;
 #ifdef ENABLE_WAYLAND
-	case OBS_NIX_PLATFORM_WAYLAND:
 		gl_vtable = gl_wayland_egl_get_winsys_vtable();
 		blog(LOG_INFO, "Using EGL/Wayland");
-		break;
+#else
+		gl_vtable = gl_x11_egl_get_winsys_vtable();
+		blog(LOG_INFO, "Using EGL/X11");
 #endif
+		break;
 	}
+
 
 	assert(gl_vtable != NULL);
 }
@@ -90,6 +92,12 @@ extern void device_enter_context(gs_device_t *device)
 
 extern void device_leave_context(gs_device_t *device)
 {
+	device->cur_render_target = NULL;
+	device->cur_zstencil_buffer = NULL;
+	device->cur_vertex_buffer = NULL;
+	device->cur_index_buffer = NULL;
+	device->cur_swap = NULL;
+	device->cur_fbo = NULL;
 	gl_vtable->device_leave_context(device);
 }
 
