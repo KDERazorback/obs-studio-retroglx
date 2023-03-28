@@ -104,3 +104,6 @@ tags
 /flatpak_app/
 /repo/
 /CI/flatpak/flatpak-github-action-modified-*
+
+# retroglx ignored files
+.github/**
